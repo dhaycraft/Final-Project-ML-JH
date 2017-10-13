@@ -1,0 +1,95 @@
+---
+title: "Classification of Weight Lifting Technique"
+author: "dhay"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Course Assignment
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har] (see the section on the Weight Lifting Exercise Dataset).
+
+##Data Set
+Training Data Set:
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv]
+
+Testing Data Set:
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv]
+
+The original source of the data is: 
+[http://groupware.les.inf.puc-rio.br/har]. If used for any purpose please cite as given in the link.
+
+
+```{r Load.Packages}
+library(caret)
+library(caretEnsemble)
+library(randomForest)
+library(rattle)
+library(rpart.plot)
+library(MASS)
+```
+#Loading Data
+The testing and training set were both loaded from the website URL. Then a reduction of the variables was conducted using PCA
+```{r load.Data}
+url_train <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(url_train), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(url_test), na.strings=c("NA","#DIV/0!",""))  
+```
+
+#Partitioning of Training Data and Preprocessing
+Data was partitioned with 60% in the training set and 40% in the testing set. Preprocessing was done by removing all columns that had 90% NA. Also time stamps, names, and the numbering for the observations was removed. Then a 
+
+```{r part.pre.proc}
+set.seed(33)
+exclude <- grep("name|timestamp|window|X", colnames(training), value=F) 
+training <- training[,-exclude]
+NA.percent <- apply(training, 2, function(x) sum(is.na(x)))/nrow(training)
+training <- training[!(NA.percent>0.90)]
+
+
+```
+
+#Model Fitting
+
+To reduce overfitting and reduce out of sample errors a seven fold cross validation is performed with each of the models also PCA is done to reduce highly correlated variables.
+
+The following models were trained:
+Random forest, Support Vector Machine (both radial and linear), a Neural net, a Bayes Generalized linear model and a Logit Boosted model.
+```{r mod.train, cache=TRUE,results=FALSE}
+tr.ctrl <- trainControl(method = "cv", number = 3, verboseIter=FALSE , preProcOptions="pca", allowParallel=TRUE)
+rand.f <- train(classe ~ ., data = training, method = "rf", tuneGrid = data.frame(mtry = 3),trControl= tr.ctrl)
+
+Neur.Net <- train(classe ~ ., data = training, method = "nnet", verbose=FALSE)
+bayes <- train(classe ~ ., data = training, method = "bayesglm", trControl= tr.ctrl)
+log.boost <- train(classe ~ ., data = training, method = "LogitBoost", trControl= tr.ctrl)
+```
+#Results
+The accuracy of the random forest model is significantly higher than all other methods. The logit boost model is second best. The Neural Network model and the Bayes GLM are both far worse in terms of their Accuracy and out of sample estimate of accuracy(Kappa)
+```{r results}
+model <- c("Random Forest","Logit Boost","Neural Net", "Bayes GLM")
+Accuracy <- c(max(rand.f$results$Accuracy),
+        max(log.boost$results$Accuracy),
+        max(Neur.Net$results$Accuracy),
+        max(bayes$results$Accuracy))
+        
+Kappa <- c(max(rand.f$results$Kappa),
+        max(log.boost$results$Kappa),
+        max(Neur.Net$results$Kappa),
+        max(bayes$results$Kappa))  
+
+res.tab <- cbind(model,Accuracy,Kappa)
+res.tab
+```
+
+#Predictions
+According to the final test the predictions from the Random Forest predict the testing set with 100% accuracy.
+```{r predictions}
+obs=1:20
+pred=predict(rand.f, testing)
+as.data.frame(cbind(obs,pred))  
+```  
